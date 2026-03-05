@@ -1,0 +1,26 @@
+name: Daily Autoreply Relate Sync
+
+on:
+  schedule:
+    - cron: '0 4 * * *'  # 매일 오후 1시 KST (UTC 04:00)
+  workflow_dispatch:       # 수동 실행 허용
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run sync
+        env:
+          RELATE_API_KEY: ${{ secrets.RELATE_API_KEY }}
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
+        run: python main.py
