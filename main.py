@@ -263,10 +263,20 @@ def upsert_organization(api_key: str, domain: str, org_map: dict) -> tuple[str, 
         json={"name": domain, "domains": [domain]},
         timeout=30,
     )
+    if r.ok:
+        org_id = str(r.json().get("id") or "").strip()
+        org_map[domain] = org_id
+        return org_id, "created"
+
+    # 422 - 이미 존재하는 도메인 → 전체 org 재조회해서 ID 확보
+    if r.status_code == 422 and "same organization domain" in r.text.lower():
+        fresh = build_org_map_by_domain(api_key)
+        org_map.update(fresh)
+        if domain in org_map:
+            return org_map[domain], "existing"
+
     r.raise_for_status()
-    org_id = str(r.json().get("id") or "").strip()
-    org_map[domain] = org_id
-    return org_id, "created"
+    return "", "created"
 
 
 def upsert_contact(
@@ -363,6 +373,19 @@ def main() -> None:
         return
 
     success_count = fail_count = skip_count = 0
+    # 시트 쓰기는 배치로 모아서 처리 (429 방지)
+    pending_updates: dict[int, str] = {}
+
+    def flush_updates() -> None:
+        if not pending_updates:
+            return
+        ws.batch_update(
+            [
+                {"range": f"N{row}", "values": [[val]]}
+                for row, val in pending_updates.items()
+            ]
+        )
+        pending_updates.clear()
 
     print(f"\n=== 처리 시작: 총 {len(all_values) - 1}행 ===\n")
 
@@ -386,14 +409,14 @@ def main() -> None:
         emails = list(dict.fromkeys(emails))  # 순서 유지 중복 제거
 
         if not emails:
-            ws.update_cell(i, COL_STATUS + 1, "이메일 없음")
+            pending_updates[i] = "이메일 없음"
             fail_count += 1
             continue
 
         valid_emails = [e for e in emails if not is_wordpress_email(e)]
 
         if not valid_emails:
-            ws.update_cell(i, COL_STATUS + 1, "부적합")
+            pending_updates[i] = "부적합"
             skip_count += 1
             continue
 
@@ -460,12 +483,17 @@ def main() -> None:
                 break
 
         if row_ok:
-            ws.update_cell(i, COL_STATUS + 1, "done")
+            pending_updates[i] = "done"
             success_count += 1
         else:
-            ws.update_cell(i, COL_STATUS + 1, error_msg[:100])
+            pending_updates[i] = error_msg[:100]
             fail_count += 1
 
+        # 50행마다 중간 flush (크래시 시 진행분 보존)
+        if len(pending_updates) >= 50:
+            flush_updates()
+
+    flush_updates()
     print(
         f"\n=== 완료: 성공 {success_count}건 / 실패 {fail_count}건 / 스킵 {skip_count}건 ==="
     )
