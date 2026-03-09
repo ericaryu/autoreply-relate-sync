@@ -15,16 +15,18 @@ import requests
 from google.oauth2.service_account import Credentials
 
 # --- 설정 ---
-SPREADSHEET_ID = os.environ.get("SPREADSHEET_ID", "1jLTdRD_31u_V9EbRsBPJKGVf6mLzpIlr_iLwc8JykuE")
+SPREADSHEET_ID = os.environ.get(
+    "SPREADSHEET_ID", "1jLTdRD_31u_V9EbRsBPJKGVf6mLzpIlr_iLwc8JykuE"
+)
 SHEET_TAB = "자동회신"
 RELATE_LIST_ID = "GgU7bj"
 RELATE_BASE_URL = "https://api.relate.so/v1"
 
 # 열 인덱스 (0-based)
-COL_EMAIL_SINGLE = 3   # D열: 이메일 (단일)
-COL_EMAIL_MULTI  = 6   # G열: 이메일 (복수, 파싱 필요)
-COL_DATE         = 9   # J열: 수신일
-COL_STATUS       = 13  # N열: 등록여부
+COL_EMAIL_SINGLE = 3  # D열: 이메일 (단일)
+COL_EMAIL_MULTI = 6  # G열: 이메일 (복수, 파싱 필요)
+COL_DATE = 9  # J열: 수신일
+COL_STATUS = 13  # N열: 등록여부
 
 SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
@@ -36,7 +38,9 @@ SCOPES = [
 def get_gspread_client() -> gspread.Client:
     json_str = os.environ.get("GOOGLE_SERVICE_ACCOUNT_JSON")
     if not json_str:
-        raise EnvironmentError("환경변수 GOOGLE_SERVICE_ACCOUNT_JSON 이 설정되지 않았습니다.")
+        raise EnvironmentError(
+            "환경변수 GOOGLE_SERVICE_ACCOUNT_JSON 이 설정되지 않았습니다."
+        )
     creds = Credentials.from_service_account_info(json.loads(json_str), scopes=SCOPES)
     return gspread.authorize(creds)
 
@@ -50,7 +54,10 @@ def parse_emails(text: str) -> list[str]:
     """텍스트에서 이메일 주소를 모두 추출해 소문자 리스트로 반환."""
     if not text:
         return []
-    return [e.lower() for e in re.findall(r"[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}", text)]
+    return [
+        e.lower()
+        for e in re.findall(r"[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}", text)
+    ]
 
 
 def is_wordpress_email(email: str) -> bool:
@@ -65,7 +72,9 @@ def extract_domain(email: str) -> str | None:
 
 # ── 초기화: 수신일 커스텀 필드 확보 ──────────────────────────
 def ensure_date_custom_field(api_key: str) -> None:
-    r = requests.get(f"{RELATE_BASE_URL}/custom_fields", headers=rh(api_key), timeout=15)
+    r = requests.get(
+        f"{RELATE_BASE_URL}/custom_fields", headers=rh(api_key), timeout=15
+    )
     r.raise_for_status()
     existing = {f["name"] for f in r.json()["data"] if f.get("model") == "contact"}
     if "수신일" not in existing:
@@ -84,7 +93,9 @@ def ensure_date_custom_field(api_key: str) -> None:
 def get_list_entry_type(api_key: str) -> str:
     """List의 entry_type을 조회해 반환. 조회 실패 시 'Contact' 기본값."""
     try:
-        r = requests.get(f"{RELATE_BASE_URL}/lists/{RELATE_LIST_ID}", headers=rh(api_key), timeout=15)
+        r = requests.get(
+            f"{RELATE_BASE_URL}/lists/{RELATE_LIST_ID}", headers=rh(api_key), timeout=15
+        )
         r.raise_for_status()
         entry_type = str(r.json().get("entry_type") or "").strip()
         return entry_type or "Contact"
@@ -100,8 +111,12 @@ def build_org_map_by_domain(api_key: str) -> dict[str, str]:
     orgs: list[dict] = []
     after = 0
     while True:
-        r = requests.get(f"{RELATE_BASE_URL}/organizations", headers=h,
-                         params={"first": 100, "after": after}, timeout=20)
+        r = requests.get(
+            f"{RELATE_BASE_URL}/organizations",
+            headers=h,
+            params={"first": 100, "after": after},
+            timeout=20,
+        )
         r.raise_for_status()
         data = r.json()
         orgs.extend(data.get("data", []))
@@ -113,7 +128,9 @@ def build_org_map_by_domain(api_key: str) -> dict[str, str]:
     for o in orgs:
         oid = str(o.get("id") or "").strip()
         for d in o.get("domains", []):
-            domain = str(d if isinstance(d, str) else d.get("domain", "")).strip().lower()
+            domain = (
+                str(d if isinstance(d, str) else d.get("domain", "")).strip().lower()
+            )
             if domain and oid:
                 out[domain] = oid
     return out
@@ -125,8 +142,12 @@ def build_contact_map_by_email(api_key: str) -> dict[str, str]:
     contacts: list[dict] = []
     after = 0
     while True:
-        r = requests.get(f"{RELATE_BASE_URL}/contacts", headers=h,
-                         params={"first": 100, "after": after}, timeout=20)
+        r = requests.get(
+            f"{RELATE_BASE_URL}/contacts",
+            headers=h,
+            params={"first": 100, "after": after},
+            timeout=20,
+        )
         r.raise_for_status()
         data = r.json()
         contacts.extend(data.get("data", []))
@@ -151,8 +172,12 @@ def build_list_entry_map(api_key: str) -> dict[str, str]:
     entries: list[dict] = []
     after = 0
     while True:
-        r = requests.get(f"{RELATE_BASE_URL}/lists/{RELATE_LIST_ID}/entries", headers=h,
-                         params={"first": 100, "after": after}, timeout=15)
+        r = requests.get(
+            f"{RELATE_BASE_URL}/lists/{RELATE_LIST_ID}/entries",
+            headers=h,
+            params={"first": 100, "after": after},
+            timeout=15,
+        )
         r.raise_for_status()
         data = r.json()
         entries.extend(data.get("data", []))
@@ -181,8 +206,9 @@ def _extract_contact_id_by_email(contacts: list, email: str) -> str:
 
 def _find_contact_in_org(h: dict, org_id: str, email: str) -> str:
     """org 내 contacts에서 이메일로 contact_id 검색."""
-    r = requests.get(f"{RELATE_BASE_URL}/organizations/{org_id}/contacts",
-                     headers=h, timeout=15)
+    r = requests.get(
+        f"{RELATE_BASE_URL}/organizations/{org_id}/contacts", headers=h, timeout=15
+    )
     if r.ok:
         return _extract_contact_id_by_email(r.json().get("data", []), email)
     return ""
@@ -192,8 +218,12 @@ def _find_contact_globally(h: dict, email: str) -> str:
     """전체 contacts를 페이징하여 이메일로 contact_id 검색 (필터 API 없음)."""
     after = 0
     while True:
-        r = requests.get(f"{RELATE_BASE_URL}/contacts", headers=h,
-                         params={"first": 100, "after": after}, timeout=20)
+        r = requests.get(
+            f"{RELATE_BASE_URL}/contacts",
+            headers=h,
+            params={"first": 100, "after": after},
+            timeout=20,
+        )
         if not r.ok:
             break
         data = r.json()
@@ -206,16 +236,18 @@ def _find_contact_globally(h: dict, email: str) -> str:
     return ""
 
 
-def _patch_contact(h: dict, contact_id: str, email: str,
-                   custom_fields: list, org_id: str = "") -> None:
+def _patch_contact(
+    h: dict, contact_id: str, email: str, custom_fields: list, org_id: str = ""
+) -> None:
     """contact PATCH 업데이트."""
     payload: dict = {"emails": [email]}
     if org_id:
         payload["organization_id"] = org_id
     if custom_fields:
         payload["custom_fields"] = custom_fields
-    requests.patch(f"{RELATE_BASE_URL}/contacts/{contact_id}",
-                   headers=h, json=payload, timeout=30)
+    requests.patch(
+        f"{RELATE_BASE_URL}/contacts/{contact_id}", headers=h, json=payload, timeout=30
+    )
 
 
 # ── upsert 함수들 ─────────────────────────────────────────────
@@ -225,8 +257,12 @@ def upsert_organization(api_key: str, domain: str, org_map: dict) -> tuple[str, 
     if existing_id:
         return existing_id, "existing"
 
-    r = requests.post(f"{RELATE_BASE_URL}/organizations", headers=rh(api_key),
-                      json={"name": domain, "domains": [domain]}, timeout=30)
+    r = requests.post(
+        f"{RELATE_BASE_URL}/organizations",
+        headers=rh(api_key),
+        json={"name": domain, "domains": [domain]},
+        timeout=30,
+    )
     r.raise_for_status()
     org_id = str(r.json().get("id") or "").strip()
     org_map[domain] = org_id
@@ -249,7 +285,9 @@ def upsert_contact(
     payload = {"organization_id": org_id, "emails": [email]}
     if custom_fields:
         payload["custom_fields"] = custom_fields
-    r = requests.post(f"{RELATE_BASE_URL}/contacts", headers=h, json=payload, timeout=30)
+    r = requests.post(
+        f"{RELATE_BASE_URL}/contacts", headers=h, json=payload, timeout=30
+    )
     if r.ok:
         contact_id = str(r.json().get("id") or "").strip()
         contact_map[email.lower()] = contact_id
@@ -371,7 +409,9 @@ def main() -> None:
                 org_id, org_action = upsert_organization(api_key, domain, org_map)
                 print(f"  [행 {i}] Org {org_action}: {domain} ({org_id})")
             except requests.HTTPError as e:
-                error_msg = f"Org 실패: {e.response.status_code} {e.response.text[:120]}"
+                error_msg = (
+                    f"Org 실패: {e.response.status_code} {e.response.text[:120]}"
+                )
                 print(f"  [행 {i}] FAIL — {error_msg}")
                 row_ok = False
                 break
@@ -387,7 +427,9 @@ def main() -> None:
                 )
                 print(f"  [행 {i}] Contact {contact_action}: {email} ({contact_id})")
             except requests.HTTPError as e:
-                error_msg = f"Contact 실패: {e.response.status_code} {e.response.text[:120]}"
+                error_msg = (
+                    f"Contact 실패: {e.response.status_code} {e.response.text[:120]}"
+                )
                 print(f"  [행 {i}] FAIL — {error_msg}")
                 row_ok = False
                 break
@@ -400,10 +442,14 @@ def main() -> None:
             entryable_id = contact_id if entry_type == "Contact" else org_id
 
             try:
-                entry_action = upsert_list_entry(api_key, entryable_id, entry_type, entry_map)
+                entry_action = upsert_list_entry(
+                    api_key, entryable_id, entry_type, entry_map
+                )
                 print(f"  [행 {i}] List entry {entry_action}: {email}")
             except requests.HTTPError as e:
-                error_msg = f"List 실패: {e.response.status_code} {e.response.text[:120]}"
+                error_msg = (
+                    f"List 실패: {e.response.status_code} {e.response.text[:120]}"
+                )
                 print(f"  [행 {i}] FAIL — {error_msg}")
                 row_ok = False
                 break
@@ -420,7 +466,9 @@ def main() -> None:
             ws.update_cell(i, COL_STATUS + 1, error_msg[:100])
             fail_count += 1
 
-    print(f"\n=== 완료: 성공 {success_count}건 / 실패 {fail_count}건 / 스킵 {skip_count}건 ===")
+    print(
+        f"\n=== 완료: 성공 {success_count}건 / 실패 {fail_count}건 / 스킵 {skip_count}건 ==="
+    )
 
 
 if __name__ == "__main__":
