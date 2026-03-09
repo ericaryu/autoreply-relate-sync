@@ -215,7 +215,7 @@ def upsert_contact(
         contact_map[email.lower()] = contact_id
         return contact_id, "created"
 
-    # 422 + already taken → org 내 contacts에서 검색
+    # 422 + already taken → org 내 contacts에서 검색 후 PATCH 업데이트
     if r.status_code == 422 and "has already been taken" in r.text:
         r2 = requests.get(f"{RELATE_BASE_URL}/organizations/{org_id}/contacts",
                           headers=h, timeout=15)
@@ -226,6 +226,11 @@ def upsert_contact(
                     em = e if isinstance(e, str) else e.get("email", "")
                     if str(em or "").strip().lower() == email.lower() and cid:
                         contact_map[email.lower()] = cid
+                        patch_payload: dict = {"emails": [email]}
+                        if custom_fields:
+                            patch_payload["custom_fields"] = custom_fields
+                        requests.patch(f"{RELATE_BASE_URL}/contacts/{cid}",
+                                       headers=h, json=patch_payload, timeout=30)
                         return cid, "updated"
 
     r.raise_for_status()
