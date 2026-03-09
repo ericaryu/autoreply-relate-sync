@@ -167,6 +167,57 @@ def build_list_entry_map(api_key: str) -> dict[str, str]:
     }
 
 
+# ── contact 검색/패치 헬퍼 ────────────────────────────────────
+def _extract_contact_id_by_email(contacts: list, email: str) -> str:
+    """contacts 리스트에서 이메일 일치하는 contact_id 반환."""
+    for c in contacts:
+        cid = str(c.get("id") or "").strip()
+        for e in c.get("emails", []):
+            em = e if isinstance(e, str) else e.get("email", "")
+            if str(em or "").strip().lower() == email.lower() and cid:
+                return cid
+    return ""
+
+
+def _find_contact_in_org(h: dict, org_id: str, email: str) -> str:
+    """org 내 contacts에서 이메일로 contact_id 검색."""
+    r = requests.get(f"{RELATE_BASE_URL}/organizations/{org_id}/contacts",
+                     headers=h, timeout=15)
+    if r.ok:
+        return _extract_contact_id_by_email(r.json().get("data", []), email)
+    return ""
+
+
+def _find_contact_globally(h: dict, email: str) -> str:
+    """전체 contacts를 페이징하여 이메일로 contact_id 검색 (필터 API 없음)."""
+    after = 0
+    while True:
+        r = requests.get(f"{RELATE_BASE_URL}/contacts", headers=h,
+                         params={"first": 100, "after": after}, timeout=20)
+        if not r.ok:
+            break
+        data = r.json()
+        cid = _extract_contact_id_by_email(data.get("data", []), email)
+        if cid:
+            return cid
+        if not data.get("pagination", {}).get("has_next_page"):
+            break
+        after = data["pagination"]["end_cursor"]
+    return ""
+
+
+def _patch_contact(h: dict, contact_id: str, email: str,
+                   custom_fields: list, org_id: str = "") -> None:
+    """contact PATCH 업데이트."""
+    payload: dict = {"emails": [email]}
+    if org_id:
+        payload["organization_id"] = org_id
+    if custom_fields:
+        payload["custom_fields"] = custom_fields
+    requests.patch(f"{RELATE_BASE_URL}/contacts/{contact_id}",
+                   headers=h, json=payload, timeout=30)
+
+
 # ── upsert 함수들 ─────────────────────────────────────────────
 def upsert_organization(api_key: str, domain: str, org_map: dict) -> tuple[str, str]:
     """도메인 기준 Organization upsert. (org_id, action) 반환."""
@@ -192,18 +243,7 @@ def upsert_contact(
     custom_fields = [{"name": "수신일", "value": date_str}] if date_str else []
 
     if existing_id:
-        payload: dict = {"emails": [email], "organization_id": org_id}
-        if custom_fields:
-            payload["custom_fields"] = custom_fields
-        r = requests.patch(f"{RELATE_BASE_URL}/contacts/{existing_id}", headers=h,
-                           json=payload, timeout=30)
-        if r.status_code in (400, 401, 403, 422):
-            payload2: dict = {"emails": [email]}
-            if custom_fields:
-                payload2["custom_fields"] = custom_fields
-            r = requests.patch(f"{RELATE_BASE_URL}/contacts/{existing_id}", headers=h,
-                               json=payload2, timeout=30)
-        r.raise_for_status()
+        _patch_contact(h, existing_id, email, custom_fields, org_id=org_id)
         return existing_id, "updated"
 
     payload = {"organization_id": org_id, "emails": [email]}
@@ -215,23 +255,22 @@ def upsert_contact(
         contact_map[email.lower()] = contact_id
         return contact_id, "created"
 
-    # 422 + already taken → org 내 contacts에서 검색 후 PATCH 업데이트
+    # 422 + already taken → 이메일로 contact 검색 후 PATCH 업데이트
     if r.status_code == 422 and "has already been taken" in r.text:
-        r2 = requests.get(f"{RELATE_BASE_URL}/organizations/{org_id}/contacts",
-                          headers=h, timeout=15)
-        if r2.ok:
-            for c in r2.json().get("data", []):
-                cid = str(c.get("id") or "").strip()
-                for e in c.get("emails", []):
-                    em = e if isinstance(e, str) else e.get("email", "")
-                    if str(em or "").strip().lower() == email.lower() and cid:
-                        contact_map[email.lower()] = cid
-                        patch_payload: dict = {"emails": [email]}
-                        if custom_fields:
-                            patch_payload["custom_fields"] = custom_fields
-                        requests.patch(f"{RELATE_BASE_URL}/contacts/{cid}",
-                                       headers=h, json=patch_payload, timeout=30)
-                        return cid, "updated"
+        # 1차: 해당 org 내에서 검색
+        cid = _find_contact_in_org(h, org_id, email)
+        if cid:
+            contact_map[email.lower()] = cid
+            _patch_contact(h, cid, email, custom_fields)
+            return cid, "updated"
+
+        # 2차: API에 이메일 필터가 없으므로 전체 contacts 페이징하여 검색
+        print(f"    [경고] org 내 검색 실패, 전체 contacts에서 {email} 검색 중...")
+        cid = _find_contact_globally(h, email)
+        if cid:
+            contact_map[email.lower()] = cid
+            _patch_contact(h, cid, email, custom_fields, org_id=org_id)
+            return cid, "updated"
 
     r.raise_for_status()
     return "", "created"
