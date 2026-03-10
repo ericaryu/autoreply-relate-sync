@@ -19,7 +19,7 @@ SPREADSHEET_ID = os.environ.get(
     "SPREADSHEET_ID", "1jLTdRD_31u_V9EbRsBPJKGVf6mLzpIlr_iLwc8JykuE"
 )
 SHEET_TAB = "자동회신"
-RELATE_LIST_ID = "GgU7bj"
+RELATE_CONTACT_LIST_ID = "GgU7bj"  # 반드시 Contact 타입 리스트 ID 여야 함
 RELATE_BASE_URL = "https://api.relate.so/v1"
 
 # 열 인덱스 (0-based)
@@ -90,18 +90,21 @@ def ensure_date_custom_field(api_key: str) -> None:
         print("  [Contact 커스텀필드] 수신일 — 이미 존재")
 
 
-def get_list_entry_type(api_key: str) -> str:
-    """List의 entry_type을 조회해 반환. 조회 실패 시 'Contact' 기본값."""
-    try:
-        r = requests.get(
-            f"{RELATE_BASE_URL}/lists/{RELATE_LIST_ID}", headers=rh(api_key), timeout=15
+def validate_list_is_contact_type(api_key: str) -> None:
+    """RELATE_CONTACT_LIST_ID 가 Contact 타입인지 검증. 아니면 즉시 종료."""
+    r = requests.get(
+        f"{RELATE_BASE_URL}/lists/{RELATE_CONTACT_LIST_ID}",
+        headers=rh(api_key),
+        timeout=15,
+    )
+    r.raise_for_status()
+    entry_type = str(r.json().get("entry_type") or "").strip()
+    if entry_type != "Contact":
+        raise SystemExit(
+            f"[오류] RELATE_CONTACT_LIST_ID={RELATE_CONTACT_LIST_ID} 의 "
+            f"entry_type={entry_type!r} 입니다. "
+            "Contact 타입 리스트 ID로 교체하세요."
         )
-        r.raise_for_status()
-        entry_type = str(r.json().get("entry_type") or "").strip()
-        return entry_type or "Contact"
-    except Exception as e:
-        print(f"  [경고] List 조회 실패, entry_type=Contact 으로 기본 설정: {e}")
-        return "Contact"
 
 
 # ── 기존 데이터 로드 ──────────────────────────────────────────
@@ -173,7 +176,7 @@ def build_list_entry_map(api_key: str) -> dict[str, str]:
     after = 0
     while True:
         r = requests.get(
-            f"{RELATE_BASE_URL}/lists/{RELATE_LIST_ID}/entries",
+            f"{RELATE_BASE_URL}/lists/{RELATE_CONTACT_LIST_ID}/entries",
             headers=h,
             params={"first": 100, "after": after},
             timeout=15,
@@ -325,22 +328,22 @@ def upsert_contact(
 
 
 def upsert_list_entry(
-    api_key: str, entryable_id: str, entryable_type: str, entry_map: dict
+    api_key: str, contact_id: str, entryable_type: str, entry_map: dict
 ) -> str:
-    """List entry upsert. action 반환."""
-    existing_id = entry_map.get(entryable_id)
+    """Contact List entry upsert. action 반환."""
+    existing_id = entry_map.get(contact_id)
     if existing_id:
         return "existing"
 
     r = requests.post(
-        f"{RELATE_BASE_URL}/lists/{RELATE_LIST_ID}/entries",
+        f"{RELATE_BASE_URL}/lists/{RELATE_CONTACT_LIST_ID}/entries",
         headers=rh(api_key),
-        json={"entryable_id": entryable_id, "entryable_type": entryable_type},
+        json={"entryable_id": contact_id, "entryable_type": entryable_type},
         timeout=30,
     )
     r.raise_for_status()
     entry_id = str(r.json().get("id") or "").strip()
-    entry_map[entryable_id] = entry_id
+    entry_map[contact_id] = entry_id
     return "created"
 
 
@@ -352,8 +355,8 @@ def main() -> None:
 
     print("=== 초기화 ===")
     ensure_date_custom_field(api_key)
-    entry_type = get_list_entry_type(api_key)
-    print(f"  List entry_type: {entry_type}")
+    validate_list_is_contact_type(api_key)
+    print(f"  List({RELATE_CONTACT_LIST_ID}) entry_type 검증 OK: Contact")
 
     print("기존 데이터 로딩 중...")
     org_map = build_org_map_by_domain(api_key)
@@ -462,11 +465,9 @@ def main() -> None:
                 row_ok = False
                 break
 
-            entryable_id = contact_id if entry_type == "Contact" else org_id
-
             try:
                 entry_action = upsert_list_entry(
-                    api_key, entryable_id, entry_type, entry_map
+                    api_key, contact_id, "Contact", entry_map
                 )
                 print(f"  [행 {i}] List entry {entry_action}: {email}")
             except requests.HTTPError as e:
