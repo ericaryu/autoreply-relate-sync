@@ -60,8 +60,12 @@ def parse_emails(text: str) -> list[str]:
     ]
 
 
-def is_wordpress_email(email: str) -> bool:
-    return "wordpress" in email.lower()
+INVALID_LOCAL_PARTS = {"no-reply", "noreply", "no_reply", "wordpress"}
+
+
+def is_invalid_email(email: str) -> bool:
+    local = email.lower().split("@")[0]
+    return any(kw in local for kw in INVALID_LOCAL_PARTS)
 
 
 def extract_domain(email: str) -> str | None:
@@ -419,7 +423,7 @@ def main() -> None:
             fail_count += 1
             continue
 
-        valid_emails = [e for e in emails if not is_wordpress_email(e)]
+        valid_emails = [e for e in emails if not is_invalid_email(e)]
 
         if not valid_emails:
             pending_updates[i] = "부적합"
