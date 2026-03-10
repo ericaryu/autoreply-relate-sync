@@ -277,6 +277,9 @@ def upsert_organization(api_key: str, domain: str, org_map: dict) -> tuple[str, 
         org_map.update(fresh)
         if domain in org_map:
             return org_map[domain], "existing"
+        # 재조회에서도 못 찾으면 → "auto"로 Contact 생성 시 Relate이 직접 매핑
+        print(f"    [경고] Org 재조회에서 {domain} 미발견, auto 매핑으로 진행")
+        return "auto", "auto"
 
     r.raise_for_status()
     return "", "created"
@@ -295,7 +298,7 @@ def upsert_contact(
         _patch_contact(h, existing_id, email, custom_fields, org_id=org_id)
         return existing_id, "updated"
 
-    payload = {"organization_id": org_id, "emails": [email]}
+    payload = {"organization_id": org_id if org_id else "auto", "emails": [email]}
     if custom_fields:
         payload["custom_fields"] = custom_fields
     r = requests.post(
