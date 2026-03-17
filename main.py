@@ -19,7 +19,7 @@ SPREADSHEET_ID = os.environ.get(
     "SPREADSHEET_ID", "1jLTdRD_31u_V9EbRsBPJKGVf6mLzpIlr_iLwc8JykuE"
 )
 SHEET_TAB = "자동회신"
-RELATE_CONTACT_LIST_ID = "9OUvPe"  # 반드시 Contact 타입 리스트 ID 여야 함
+RELATE_CONTACT_LIST_ID = "9OUvxB"  # 반드시 Contact 타입 리스트 ID 여야 함
 RELATE_BASE_URL = "https://api.relate.so/v1"
 
 # 열 인덱스 (0-based)
