@@ -400,9 +400,9 @@ def main() -> None:
     print(f"\n=== 처리 시작: 총 {len(all_values) - 1}행 ===\n")
 
     for i, row in enumerate(all_values[1:], start=2):
-        # N열 상태 확인 — 값 있으면 스킵
+        # N열 상태 확인 — 완료/부적합/이메일없음만 스킵, 에러는 재시도
         status_val = row[COL_STATUS].strip() if len(row) > COL_STATUS else ""
-        if status_val:
+        if status_val in ("done", "부적합", "이메일 없음"):
             skip_count += 1
             continue
 
